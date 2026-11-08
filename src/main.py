@@ -1,4 +1,4 @@
-""" Сбор данных (Этап 2)."""
+""" Основные операции  (Этап 3)."""
 
 import argparse
 import sys
@@ -31,7 +31,7 @@ def create_parser():
     parser.add_argument(
         "--mode",
         default=DEFAULT_MODE,
-        choices=["local", "remote"],
+        choices=["local", "remote","test"],
         help="Режим работы с тестовым репозиторием"
     )
     parser.add_argument(
@@ -51,6 +51,7 @@ def create_parser():
         default=DEFAULT_DEPTH,
         help="Максимальная глубина анализа зависимостей"
     )
+    
     return parser
 
 
@@ -135,9 +136,83 @@ def get_dependencies(package_name, source, mode):
     
     return parse_dependencies(data, package_name)
 
+def load_test_graph(path):
+    """Загрузить граф из тестового файла (Пункт 4)."""
+    try:
+        graph = {}
+        with open(path, "r", encoding="utf-8") as file:
+            for line in file:
+                line = line.strip()
+                if not line:
+                    continue
+                package, deps_str = line.split(":", 1)
+                package = package.strip()
+                deps = [
+                    dep.strip()
+                    for dep in deps_str.split(",")
+                    if dep.strip()
+                ]
+                graph[package] = deps
+        return graph
+    except FileNotFoundError:
+        print(f"Error: файл не найден: {path}")
+        sys.exit(1)
+
+
+def build_graph_dfs(package, graph_data, source, mode, max_depth):
+    """Построить граф зависимостей через DFS (Пункт 1, 2)."""
+    result = {}
+    visited = set()
+    
+    def dfs(current, depth):
+        if depth > max_depth:
+            return
+        if current in visited:
+            return
+        visited.add(current)
+        
+        if mode == "test":
+            deps = graph_data.get(current, [])
+        else:
+            deps = get_dependencies(current, source, mode)
+        
+        result[current] = deps
+        
+        for dep in deps:
+            dfs(dep, depth + 1)
+    
+    dfs(package, 0)
+    return result
+
+
+def print_graph_ascii(graph, root):
+    """Вывести граф в формате ASCII-дерева (Пункт 3)."""
+    print(f"\nГраф зависимостей пакета '{root}':")
+    
+    def print_node(node, prefix, is_last, visited):
+        connector = "└── " if is_last else "├── "
+        print(f"{prefix}{connector}{node}")
+        
+        if node in visited:
+            print(f"{prefix}{'    ' if is_last else '│   '}(цикл)")
+            return
+        
+        visited.add(node)
+        deps = graph.get(node, [])
+        
+        for i, dep in enumerate(deps):
+            is_last_dep = (i == len(deps) - 1)
+            new_prefix = prefix + ("    " if is_last else "│   ")
+            print_node(dep, new_prefix, is_last_dep, visited.copy())
+    
+    print(root)
+    deps = graph.get(root, [])
+    for i, dep in enumerate(deps):
+        is_last = (i == len(deps) - 1)
+        print_node(dep, "", is_last, {root})
 
 def print_dependencies(dependencies, package_name):
-    """Вывести зависимости на экран. (Пункт 3)"""
+    """Вывести зависимости на экран. (Пункт 3. Этап 2.)"""
     print(f"\nПрямые зависимости пакета '{package_name}':")
     if dependencies:
         for dependency in dependencies:
@@ -153,12 +228,27 @@ def main():
     validate_args(args)
     print_params(args)
     
-    dependencies = get_dependencies(
-        args.package,
-        args.source,
-        args.mode
-    )
-    print_dependencies(dependencies, args.package)
+    if args.mode == "test":
+        graph_data = load_test_graph(args.source)
+        graph = build_graph_dfs(
+            args.package,
+            graph_data,
+            args.source,
+            args.mode,
+            args.depth
+        )
+        if args.format == "tree":
+            print_graph_ascii(graph, args.package)
+        else:
+            for package, deps in graph.items():
+                print(f"{package}: {', '.join(deps)}")
+    else:
+        dependencies = get_dependencies(
+            args.package,
+            args.source,
+            args.mode
+        )
+        print_dependencies(dependencies, args.package)
 
 if __name__ == "__main__":
     main()
