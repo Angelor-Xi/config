@@ -1,4 +1,4 @@
-""" Основные операции  (Этап 3)."""
+""" Дополнительные операции (Этап 4)."""
 
 import argparse
 import sys
@@ -10,7 +10,7 @@ DEFAULT_DEPTH = 3
 DEFAULT_MODE = "local"
 DEFAULT_OUTPUT = "graph.png"
 DEFAULT_FORMAT = "tree"
-
+DEFAULT_DIRECTION = "forward"
 
 def create_parser():
     """Создание парсеров аргументов командной строки."""
@@ -51,6 +51,12 @@ def create_parser():
         default=DEFAULT_DEPTH,
         help="Максимальная глубина анализа зависимостей"
     )
+    parser.add_argument(
+        "--direction",
+        default=DEFAULT_DIRECTION,
+        choices=["forward", "backward"],
+        help="Направление обхода: forward (прямые) или backward (обратные)"
+    )
     
     return parser
 
@@ -77,7 +83,7 @@ def print_params(args):
     print(f"  output:  {args.output}")
     print(f"  format:  {args.format}")
     print(f"  depth:   {args.depth}")
-
+    print(f"  direction: {args.direction}")
 
 def fetch_packages_file(source):
     """Скачать файл Packages.gz из репозитория."""
@@ -158,9 +164,19 @@ def load_test_graph(path):
         print(f"Error: файл не найден: {path}")
         sys.exit(1)
 
+def build_reverse_graph(graph_data):
+    """Построить обратный граф зависимостей."""
+    reverse_graph = {package: [] for package in graph_data}
+    
+    for package, deps in graph_data.items():
+        for dep in deps:
+            if dep in reverse_graph:
+                reverse_graph[dep].append(package)
+    
+    return reverse_graph
 
 def build_graph_dfs(package, graph_data, source, mode, max_depth):
-    """Построить граф зависимостей через DFS (Пункт 1, 2)."""
+    """Построить граф зависимостей через DFS."""
     result = {}
     visited = set()
     
@@ -186,7 +202,7 @@ def build_graph_dfs(package, graph_data, source, mode, max_depth):
 
 
 def print_graph_ascii(graph, root):
-    """Вывести граф в формате ASCII-дерева (Пункт 3)."""
+    """Вывести граф в формате ASCII-дерева."""
     print(f"\nГраф зависимостей пакета '{root}':")
     
     def print_node(node, prefix, is_last, visited):
@@ -212,7 +228,7 @@ def print_graph_ascii(graph, root):
         print_node(dep, "", is_last, {root})
 
 def print_dependencies(dependencies, package_name):
-    """Вывести зависимости на экран. (Пункт 3. Этап 2.)"""
+    """Вывести зависимости на экран."""
     print(f"\nПрямые зависимости пакета '{package_name}':")
     if dependencies:
         for dependency in dependencies:
@@ -227,9 +243,13 @@ def main():
     args = parser.parse_args()
     validate_args(args)
     print_params(args)
-    
+
     if args.mode == "test":
         graph_data = load_test_graph(args.source)
+        
+        if args.direction == "backward":
+            graph_data = build_reverse_graph(graph_data)
+        
         graph = build_graph_dfs(
             args.package,
             graph_data,
