@@ -1,8 +1,10 @@
-"""Реализация минимального прототипа с конфигурацией (Этап 1)."""
+""" Сбор данных (Этап 2)."""
 
 import argparse
 import sys
-
+import gzip
+from urllib.request import urlopen
+from urllib.error import URLError
 
 DEFAULT_DEPTH = 3
 DEFAULT_MODE = "local"
@@ -23,7 +25,7 @@ def create_parser():
     parser.add_argument(
         "--source",
         required=True,
-        help="URL-адрес репозитория или путь к файлу"
+        help="URL-адрес репозитория или путь к файлу" 
          " тестового репозитория"
     )
     parser.add_argument(
@@ -76,13 +78,87 @@ def print_params(args):
     print(f"  depth:   {args.depth}")
 
 
+def fetch_packages_file(source):
+    """Скачать файл Packages.gz из репозитория."""
+    try:
+        url = f"{source}/dists/jammy/main/binary-amd64/Packages.gz"
+        with urlopen(url) as response:
+            return response.read()
+    except URLError as error:
+        print(f"Error: не удалось скачать файл: {error}")
+        sys.exit(1)
+
+
+def read_local_file(path):
+    """Прочитать локальный файл."""
+    try:
+        with open(path, "rb") as file:
+            return file.read()
+    except FileNotFoundError:
+        print(f"Error: файл не найден: {path}")
+        sys.exit(1)
+
+
+def parse_dependencies(data, package_name):
+    """Найти зависимости пакета в данных."""
+    decompressed = gzip.decompress(data).decode("utf-8")
+    packages = decompressed.split("\n\n")
+    
+    for package_block in packages:
+        lines = package_block.strip().split("\n")
+        current_package = None
+        dependencies = []
+        
+        for line in lines:
+            if line.startswith("Package:"):
+                current_package = line.split(": ", 1)[1].strip()
+            elif line.startswith("Depends:") and current_package == package_name:
+                deps_str = line.split(": ", 1)[1].strip()
+                dependencies = [
+                    dep.strip().split("(")[0].strip()
+                    for dep in deps_str.split(",")
+                ]
+                return dependencies
+    
+    return []
+
+
+def get_dependencies(package_name, source, mode):
+    """Получить зависимости пакета."""
+    if mode == "remote":
+        data = fetch_packages_file(source)
+    elif mode == "local":
+        data = read_local_file(source)
+    else:
+        print(f"Error: неизвестный режим: {mode}")
+        sys.exit(1)
+    
+    return parse_dependencies(data, package_name)
+
+
+def print_dependencies(dependencies, package_name):
+    """Вывести зависимости на экран. (Пункт 3)"""
+    print(f"\nПрямые зависимости пакета '{package_name}':")
+    if dependencies:
+        for dependency in dependencies:
+            print(f"  - {dependency}")
+    else:
+        print("  Зависимости не найдены")
+
+
 def main():
     """Главная функция приложения."""
     parser = create_parser()
     args = parser.parse_args()
     validate_args(args)
     print_params(args)
-
+    
+    dependencies = get_dependencies(
+        args.package,
+        args.source,
+        args.mode
+    )
+    print_dependencies(dependencies, args.package)
 
 if __name__ == "__main__":
     main()
