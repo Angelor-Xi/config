@@ -1,9 +1,10 @@
-""" Дополнительные операции (Этап 4)."""
+""" Визуализация (Этап 5)."""
 
 import argparse
 import sys
 import gzip
-from urllib.request import urlopen
+import base64
+from urllib.request import urlopen, Request
 from urllib.error import URLError
 
 DEFAULT_DEPTH = 3
@@ -11,6 +12,7 @@ DEFAULT_MODE = "local"
 DEFAULT_OUTPUT = "graph.png"
 DEFAULT_FORMAT = "tree"
 DEFAULT_DIRECTION = "forward"
+MERMAID_API_URL = "https://mermaid.ink/svg/"
 
 def create_parser():
     """Создание парсеров аргументов командной строки."""
@@ -55,7 +57,8 @@ def create_parser():
         "--direction",
         default=DEFAULT_DIRECTION,
         choices=["forward", "backward"],
-        help="Направление обхода: forward (прямые) или backward (обратные)"
+        help="Направление обхода: forward (прямые) или"
+         " backward (обратные)"
     )
     
     return parser
@@ -143,7 +146,7 @@ def get_dependencies(package_name, source, mode):
     return parse_dependencies(data, package_name)
 
 def load_test_graph(path):
-    """Загрузить граф из тестового файла (Пункт 4)."""
+    """Загрузить граф из тестового файл."""
     try:
         graph = {}
         with open(path, "r", encoding="utf-8") as file:
@@ -200,6 +203,45 @@ def build_graph_dfs(package, graph_data, source, mode, max_depth):
     dfs(package, 0)
     return result
 
+def generate_mermaid(graph, root):
+    """Сгенерировать Mermaid-код для графа (Пункт 1)."""
+    lines = ["graph TD"]
+    
+    for node, deps in graph.items():
+        if not deps:
+            lines.append(f"    {node}['{node}']")
+        else:
+            for dep in deps:
+                lines.append(f"    {node} --> {dep}")
+    
+    return "\n".join(lines)
+
+
+def save_svg(mermaid_code, output_path):
+    """Сохранить граф в SVG через mermaid.ink API (Пункт 2)."""
+    try:
+        encoded = base64.urlsafe_b64encode(
+            mermaid_code.encode("utf-8")
+        ).decode("utf-8")
+        url = f"{MERMAID_API_URL}{encoded}"
+        
+        request = Request(url)
+        request.add_header("User-Agent", "Python")
+        
+        with urlopen(request) as response:
+            svg_data = response.read()
+        
+        with open(output_path, "wb") as file:
+            file.write(svg_data)
+        
+        print(f"\nГраф сохранён в файл: {output_path}")
+    except URLError as error:
+        print(f"Error: не удалось сохранить SVG: {error}")
+        print("Сохраняю Mermaid-код в файл .mmd...")
+        mmd_path = output_path.replace(".svg", ".mmd")
+        with open(mmd_path, "w", encoding="utf-8") as file:
+            file.write(mermaid_code)
+        print(f"Mermaid-код сохранён в: {mmd_path}")
 
 def print_graph_ascii(graph, root):
     """Вывести граф в формате ASCII-дерева."""
@@ -257,6 +299,10 @@ def main():
             args.mode,
             args.depth
         )
+
+        mermaid_code = generate_mermaid(graph, args.package)
+        save_svg(mermaid_code, args.output)
+
         if args.format == "tree":
             print_graph_ascii(graph, args.package)
         else:
